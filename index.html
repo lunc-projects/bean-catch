@@ -78,6 +78,45 @@
     padding:4px 12px;border-radius:999px;letter-spacing:.06em;text-transform:uppercase;
   }
   .bestline{margin-top:10px;font-size:14px;opacity:.75}
+  .lbbtn{
+    margin-top:14px;cursor:pointer;border-radius:999px;padding:10px 22px;
+    font-size:15px;font-weight:700;color:var(--cream);
+    background:rgba(247,234,215,.10);border:1px solid rgba(247,234,215,.35);
+  }
+  .lbbtn:active{transform:translateY(2px)}
+  .lbstatus{margin-top:12px;font-size:14.5px;min-height:19px;color:var(--gold)}
+  .namerow{margin-top:10px;display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}
+  .namerow input{
+    font-size:15px;padding:9px 12px;border-radius:10px;width:172px;text-align:center;
+    border:1px solid rgba(247,234,215,.35);background:rgba(30,17,7,.7);color:var(--cream);
+  }
+  .namerow button{
+    cursor:pointer;border:none;border-radius:999px;padding:10px 18px;font-size:14px;font-weight:800;
+    color:#2b1708;background:linear-gradient(180deg,#ffd964,#f0a51f);
+  }
+  /* ---------- Leaderboard panel ---------- */
+  #lbScreen{z-index:20;justify-content:flex-start;padding-top:calc(22px + env(safe-area-inset-top))}
+  .lbtabs{display:flex;gap:8px;margin:16px 0 8px}
+  .lbtab{
+    cursor:pointer;border-radius:999px;padding:8px 18px;font-size:14px;font-weight:700;
+    color:var(--cream);background:rgba(247,234,215,.08);border:1px solid rgba(247,234,215,.25);
+  }
+  .lbtab.on{background:linear-gradient(180deg,#ffd964,#f0a51f);color:#2b1708;border-color:transparent}
+  .lbmeta{font-size:12.5px;opacity:.7;min-height:16px}
+  .lblist{margin-top:8px;width:min(430px,94vw);max-height:54vh;overflow-y:auto;padding:2px}
+  .lbrow{
+    display:flex;align-items:center;gap:10px;padding:7px 12px;margin-bottom:6px;font-size:15px;
+    border-radius:10px;background:rgba(247,234,215,.05);border:1px solid rgba(247,234,215,.09);
+  }
+  .lbrow .rk{width:30px;font-weight:800;color:var(--gold);text-align:right;font-variant-numeric:tabular-nums}
+  .lbrow .nm{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lbrow .sc{font-weight:800;font-variant-numeric:tabular-nums}
+  .lbrow.me{outline:2px solid var(--gold);background:rgba(245,185,33,.13)}
+  .gtag{
+    font-size:10px;letter-spacing:.08em;text-transform:uppercase;vertical-align:2px;
+    background:rgba(247,234,215,.16);padding:2px 7px;border-radius:999px;opacity:.85;
+  }
+  .lbmsg{padding:16px;font-size:14px;opacity:.8}
   /* ---------- Footer ---------- */
   #foot{
     position:absolute;left:0;right:0;bottom:0;z-index:5;text-align:center;
@@ -108,6 +147,7 @@
     Chain catches to build a <b>×2 / ×3 streak</b>. You have 3 lives.
   </div>
   <button class="playbtn" id="playBtn">▶ Play</button>
+  <button class="lbbtn" id="lbBtnMenu" type="button">🏆 Leaderboard</button>
   <div class="bestline" id="menuBest"></div>
 </div>
 
@@ -116,7 +156,24 @@
   <div class="finalscore">Final score<b id="finalScore">0</b></div>
   <div class="newbest hidden" id="newBest">★ New best ★</div>
   <div class="bestline" id="overBest"></div>
+  <div class="lbstatus" id="lbStatus"></div>
+  <div class="namerow hidden" id="nameRow">
+    <input id="nameInput" type="text" maxlength="16" placeholder="Your name" autocomplete="off">
+    <button id="nameSubmit" type="button">Submit score</button>
+  </div>
   <button class="playbtn" id="againBtn">↻ Play Again</button>
+  <button class="lbbtn" id="lbBtnOver" type="button">🏆 Leaderboard</button>
+</div>
+
+<div id="lbScreen" class="overlay hidden">
+  <div class="title" style="font-size:clamp(28px,8vw,40px)">🏆 Leaderboard</div>
+  <div class="lbtabs">
+    <button class="lbtab on" id="tabWeek" type="button">This Week</button>
+    <button class="lbtab" id="tabAll" type="button">All Time</button>
+  </div>
+  <div class="lbmeta" id="lbMeta"></div>
+  <div class="lblist" id="lbList"></div>
+  <button class="lbbtn" id="lbClose" type="button">Close</button>
 </div>
 
 <div id="pauseScreen" class="overlay hidden">
@@ -131,7 +188,7 @@
 'use strict';
 /* ============================================================
    Bean Catch — a free little game for the COFFEE community.
-   No wallet, no prizes — just beans.
+   Free to play — no prizes, just beans.
    ============================================================ */
 var canvas = document.getElementById('game');
 var ctx = canvas.getContext('2d');
@@ -199,6 +256,7 @@ var GOOD = { bean:1, cherry:1, golden:1 };
 var G = {
   state:'menu',          // menu | playing | paused | over
   score:0, lives:3, streak:0, mult:1,
+  stats:null, submitted:false,
   items:[], parts:[], texts:[],
   cupX:0, cupW:96, cupH:56, cupY:0, groundY:0, itemR:21,
   time:0, spawnT:0, shake:0,
@@ -291,14 +349,21 @@ function updateHud(){
   streakEl.textContent = G.streak > 1 ? (G.streak + ' · ×' + G.mult) : '–';
   updateLivesHud();
 }
+function freshStats(){
+  return { bean:{1:0,2:0,3:0}, cherry:{1:0,2:0,3:0}, golden:{1:0,2:0,3:0},
+           badCatches:0, goodMisses:0, maxStreak:0 };
+}
 function startGame(){
   G.score = 0; G.lives = 3; G.streak = 0; G.mult = 1;
+  G.stats = freshStats(); G.submitted = false;
   G.items = []; G.parts = []; G.texts = [];
   G.time = 0; G.spawnT = 0.35; G.shake = 0;
   G.cupX = W / 2;
   G.state = 'playing';
   menuEl.classList.add('hidden'); overEl.classList.add('hidden'); pauseEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
+  var lsEl = document.getElementById('lbStatus'); if (lsEl) lsEl.textContent = '';
+  var nrEl = document.getElementById('nameRow'); if (nrEl) nrEl.classList.add('hidden');
   ensureAudio();
   updateHud();
 }
@@ -311,6 +376,7 @@ function gameOver(){
   document.getElementById('newBest').classList.toggle('hidden', !isBest);
   overEl.classList.remove('hidden');
   sndOver();
+  submitRun();
 }
 function loseLife(){
   G.lives -= 1;
@@ -363,6 +429,10 @@ function update(dt){
       if (GOOD[it.type]){
         G.streak += 1;
         G.mult = multFor(G.streak);
+        if (G.stats){
+          G.stats[it.type][G.mult] += 1;
+          if (G.streak > G.stats.maxStreak) G.stats.maxStreak = G.streak;
+        }
         var pts = VALUES[it.type] * G.mult;
         G.score += pts;
         burst(it.x, rimY, it.type === 'golden' ? ['#ffe27a','#f5b921','#fff3c4'] : ['#c98d4e','#8a5a24','#f7ead7'], it.type === 'golden' ? 16 : 10, it.type === 'golden' ? 130 : 95);
@@ -372,6 +442,7 @@ function update(dt){
         burst(it.x, rimY, ['#555','#222','#888'], 12, 80);
         floatText(it.x, rimY - 14, it.type === 'rock' ? 'CLANG!' : 'BURNT!', '#ff8a7a');
         G.shake = 9;
+        if (G.stats) G.stats.badCatches += 1;
         sndBad();
         loseLife();
       }
@@ -385,6 +456,7 @@ function update(dt){
         burst(it.x, G.groundY, ['#6b4a2a','#4a2c17'], 6, 55);
         floatText(it.x, G.groundY - 18, 'MISSED', '#ffb3a6');
         G.streak = 0; G.mult = 1;
+        if (G.stats) G.stats.goodMisses += 1;
         sndMiss();
         loseLife();
         updateHud();
@@ -582,6 +654,7 @@ canvas.addEventListener('pointerdown', function(e){
 canvas.addEventListener('touchmove', function(e){ if (G.state === 'playing') e.preventDefault(); }, { passive:false });
 document.addEventListener('touchmove', function(e){ if (G.state === 'playing') e.preventDefault(); }, { passive:false });
 window.addEventListener('keydown', function(e){
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
   if (e.key === 'ArrowLeft'){ G.keys.left = true; e.preventDefault(); }
   if (e.key === 'ArrowRight'){ G.keys.right = true; e.preventDefault(); }
   if ((e.key === ' ' || e.key === 'Enter')){
@@ -623,6 +696,154 @@ resize();
 updateLivesHud();
 window.requestAnimationFrame(frame);
 
+/* ============================================================
+   LEADERBOARD — weekly + all-time boards, bragging rights only.
+   ============================================================ */
+var lbScreenEl = document.getElementById('lbScreen');
+var lbListEl = document.getElementById('lbList');
+var lbMetaEl = document.getElementById('lbMeta');
+var lbStatusEl = document.getElementById('lbStatus');
+var nameRowEl = document.getElementById('nameRow');
+var nameInputEl = document.getElementById('nameInput');
+var tabWeekEl = document.getElementById('tabWeek');
+var tabAllEl = document.getElementById('tabAll');
+var lbBoard = 'week';
+
+/* Telegram launch data arrives in the URL hash on web_app launches.
+   We only read it here — the server verifies it on submission. */
+var TG_INIT_DATA = null, TG_USER = null;
+(function(){
+  try{
+    var m = /(?:^#|[#&])tgWebAppData=([^&]*)/.exec(window.location.hash || '');
+    if (m){
+      TG_INIT_DATA = decodeURIComponent(m[1]);
+      var u = new URLSearchParams(TG_INIT_DATA).get('user');
+      if (u) TG_USER = JSON.parse(u);
+    }
+  }catch(e){ TG_INIT_DATA = null; TG_USER = null; }
+})();
+
+function myBoardId(){
+  if (TG_USER && TG_USER.id) return 'tg:' + TG_USER.id;
+  var n = (lsGet('beanCatchName') || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  return n ? 'guest:' + n : null;
+}
+
+function openLb(){
+  lbScreenEl.classList.remove('hidden');
+  loadLb();
+}
+function closeLb(){ lbScreenEl.classList.add('hidden'); }
+function loadLb(){
+  tabWeekEl.classList.toggle('on', lbBoard === 'week');
+  tabAllEl.classList.toggle('on', lbBoard === 'all');
+  lbMetaEl.textContent = '';
+  lbListEl.innerHTML = '<div class="lbmsg">Loading…</div>';
+  fetch('api/scores?board=' + lbBoard)
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      if (!j || !j.ok) throw new Error('bad response');
+      renderLb(j);
+    })
+    .catch(function(){
+      lbListEl.innerHTML = '<div class="lbmsg">Couldn\'t load the leaderboard — check your connection and try again.</div>';
+    });
+}
+function renderLb(j){
+  if (j.board === 'week'){
+    lbMetaEl.textContent = 'Week ' + (j.week || '') + (j.resetsAt ? ' · resets ' + String(j.resetsAt).slice(0, 10) : '');
+  } else {
+    lbMetaEl.textContent = 'Best scores of all time';
+  }
+  var entries = j.entries || [];
+  if (!entries.length){
+    lbListEl.innerHTML = '<div class="lbmsg">No scores yet — be the first!</div>';
+    return;
+  }
+  var me = myBoardId();
+  lbListEl.innerHTML = '';
+  entries.forEach(function(en, i){
+    var row = document.createElement('div');
+    row.className = 'lbrow' + (me && en.id === me ? ' me' : '');
+    var rk = document.createElement('span'); rk.className = 'rk'; rk.textContent = String(i + 1);
+    var nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = en.name;
+    if (en.guest){
+      nm.appendChild(document.createTextNode(' '));
+      var gt = document.createElement('span'); gt.className = 'gtag'; gt.textContent = 'guest';
+      nm.appendChild(gt);
+    }
+    var sc = document.createElement('span'); sc.className = 'sc'; sc.textContent = String(en.score);
+    row.appendChild(rk); row.appendChild(nm); row.appendChild(sc);
+    lbListEl.appendChild(row);
+  });
+}
+document.getElementById('lbBtnMenu').addEventListener('click', openLb);
+document.getElementById('lbBtnOver').addEventListener('click', openLb);
+document.getElementById('lbClose').addEventListener('click', closeLb);
+tabWeekEl.addEventListener('click', function(){ lbBoard = 'week'; loadLb(); });
+tabAllEl.addEventListener('click', function(){ lbBoard = 'all'; loadLb(); });
+
+/* ---------------- score submission ---------------- */
+function runPayload(){
+  return {
+    score: G.score,
+    durationSec: Math.round(G.time * 10) / 10,
+    breakdown: {
+      bean: G.stats.bean, cherry: G.stats.cherry, golden: G.stats.golden,
+      badCatches: G.stats.badCatches, goodMisses: G.stats.goodMisses,
+      maxStreak: G.stats.maxStreak
+    }
+  };
+}
+function postScore(payload){
+  lbStatusEl.textContent = 'Sending score…';
+  fetch('api/scores', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      if (j && j.ok){
+        if (j.rankWeek) lbStatusEl.textContent = '🏆 #' + j.rankWeek + ' this week' + (j.rankAll ? ' · #' + j.rankAll + ' all time' : '');
+        else if (j.rankAll) lbStatusEl.textContent = '🏆 #' + j.rankAll + ' all time';
+        else lbStatusEl.textContent = 'Score saved!';
+      } else {
+        lbStatusEl.textContent = 'Score not saved' + (j && j.error ? ' — ' + j.error : '');
+      }
+    })
+    .catch(function(){
+      lbStatusEl.textContent = 'Leaderboard unreachable — your best is still saved on this device.';
+    });
+}
+function submitRun(){
+  if (G.submitted || !G.stats) return;
+  lbStatusEl.textContent = '';
+  if (TG_INIT_DATA){
+    G.submitted = true;
+    var p = runPayload();
+    p.initData = TG_INIT_DATA;
+    postScore(p);
+  } else {
+    nameInputEl.value = lsGet('beanCatchName') || '';
+    nameRowEl.classList.remove('hidden');
+  }
+}
+document.getElementById('nameSubmit').addEventListener('click', function(){
+  var name = nameInputEl.value.replace(/\s+/g, ' ').trim();
+  if (!name || G.submitted) return;   // empty name → skip submission silently
+  lsSet('beanCatchName', name);
+  G.submitted = true;
+  nameRowEl.classList.add('hidden');
+  var p = runPayload();
+  p.guestName = name;
+  postScore(p);
+});
+nameInputEl.addEventListener('keydown', function(e){
+  e.stopPropagation();
+  if (e.key === 'Enter'){ e.preventDefault(); document.getElementById('nameSubmit').click(); }
+});
+
 /* Debug/testing hook */
 window.__beanCatch = {
   game: G,
@@ -631,7 +852,10 @@ window.__beanCatch = {
   step: function(dt){ update(dt || 0.016); },
   render: render,
   resize: resize,
-  values: VALUES
+  values: VALUES,
+  stats: function(){ return G.stats; },
+  tg: function(){ return { hasInit: !!TG_INIT_DATA, user: TG_USER }; },
+  lb: { open: openLb, close: closeLb, board: function(){ return lbBoard; } }
 };
 })();
 </script>

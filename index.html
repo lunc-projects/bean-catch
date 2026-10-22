@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Bean Catch — a COFFEE game</title>
+<style>
+  :root{
+    --cream:#f7ead7; --cream2:#efdcbd; --brown:#4a2c17; --dark:#241407;
+    --gold:#f5b921; --red:#e2483a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;background:var(--dark)}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--cream); overscroll-behavior:none; touch-action:none;
+    -webkit-user-select:none;user-select:none;
+    position:fixed;inset:0;
+  }
+  #game{position:absolute;inset:0;display:block;touch-action:none}
+  /* ---------- HUD ---------- */
+  #hud{
+    position:absolute;top:0;left:0;right:0;z-index:5;
+    display:flex;align-items:flex-start;gap:8px;
+    padding:calc(8px + env(safe-area-inset-top)) 10px 6px;
+    pointer-events:none;
+    background:linear-gradient(180deg,rgba(20,10,3,.55),rgba(20,10,3,0));
+  }
+  .hud-box{
+    background:rgba(30,17,7,.62);border:1px solid rgba(247,234,215,.18);
+    border-radius:12px;padding:5px 10px;min-width:64px;text-align:center;
+    backdrop-filter:blur(2px);
+  }
+  .hud-box .lbl{font-size:9px;letter-spacing:.14em;text-transform:uppercase;opacity:.75}
+  .hud-box .val{font-size:19px;font-weight:800;line-height:1.15;font-variant-numeric:tabular-nums}
+  #livesBox{min-width:0}
+  #lives{font-size:17px;letter-spacing:2px;color:#ff7a6b;text-shadow:0 1px 3px rgba(0,0,0,.6);white-space:nowrap}
+  #lives .off{opacity:.22;filter:grayscale(1)}
+  #streakBox{margin-left:auto}
+  #streakVal{color:var(--gold)}
+  #muteBtn{
+    pointer-events:auto;cursor:pointer;border:1px solid rgba(247,234,215,.25);
+    background:rgba(30,17,7,.62);color:var(--cream);border-radius:12px;
+    font-size:17px;line-height:1;padding:8px 10px;
+  }
+  /* ---------- Overlays ---------- */
+  .overlay{
+    position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;padding:24px;
+    background:radial-gradient(ellipse at 50% 38%,rgba(58,35,19,.88),rgba(20,10,3,.96) 75%);
+  }
+  .hidden{display:none!important}
+  .title{
+    font-family:Georgia,"Times New Roman",serif;font-size:clamp(40px,11vw,64px);
+    font-weight:700;color:var(--cream);letter-spacing:.01em;
+    text-shadow:0 3px 0 #6b4226,0 8px 24px rgba(0,0,0,.6);
+  }
+  .title .cup{color:var(--gold)}
+  .tagline{margin-top:6px;font-size:15px;opacity:.85}
+  .howto{
+    margin:22px 0 6px;font-size:15px;line-height:1.75;background:rgba(247,234,215,.06);
+    border:1px solid rgba(247,234,215,.14);border-radius:14px;padding:14px 18px;max-width:340px;
+  }
+  .howto b{color:var(--gold)}
+  .howto .bad{color:#ff8a7a}
+  .playbtn{
+    margin-top:24px;cursor:pointer;border:none;border-radius:999px;
+    padding:15px 46px;font-size:20px;font-weight:800;letter-spacing:.02em;
+    color:#2b1708;background:linear-gradient(180deg,#ffd964,#f0a51f);
+    box-shadow:0 6px 0 #9c6608,0 12px 26px rgba(0,0,0,.5);
+    transition:transform .06s ease, box-shadow .06s ease;
+  }
+  .playbtn:active{transform:translateY(4px);box-shadow:0 2px 0 #9c6608,0 6px 14px rgba(0,0,0,.5)}
+  .finalscore{font-size:20px;margin-top:10px;opacity:.9}
+  .finalscore b{font-size:44px;color:var(--gold);display:block;line-height:1.1}
+  .newbest{
+    margin-top:8px;background:var(--red);color:#fff;font-weight:700;font-size:13px;
+    padding:4px 12px;border-radius:999px;letter-spacing:.06em;text-transform:uppercase;
+  }
+  .bestline{margin-top:10px;font-size:14px;opacity:.75}
+  /* ---------- Footer ---------- */
+  #foot{
+    position:absolute;left:0;right:0;bottom:0;z-index:5;text-align:center;
+    padding:6px 8px calc(6px + env(safe-area-inset-bottom));
+    font-size:12.5px;background:linear-gradient(0deg,rgba(20,10,3,.6),rgba(20,10,3,0));
+  }
+  #foot a{color:var(--cream2);text-decoration:none;border-bottom:1px dotted rgba(247,234,215,.5);margin:0 7px;white-space:nowrap}
+  #pauseTip{font-size:13px;opacity:.8;margin-top:8px}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hidden">
+  <div class="hud-box"><div class="lbl">Score</div><div class="val" id="scoreVal">0</div></div>
+  <div class="hud-box"><div class="lbl">Best</div><div class="val" id="bestVal">0</div></div>
+  <div class="hud-box" id="livesBox"><div class="lbl">Lives</div><div id="lives"></div></div>
+  <div class="hud-box" id="streakBox"><div class="lbl">Streak</div><div class="val" id="streakVal">–</div></div>
+  <button id="muteBtn" title="Sound on/off">🔊</button>
+</div>
+
+<div id="menuScreen" class="overlay">
+  <div class="title"><span class="cup">☕</span> Bean Catch</div>
+  <div class="tagline">Catch the falling beans. Skip the burnt ones.</div>
+  <div class="howto">
+    Drag the cup to catch <b>beans +10</b>, <b>cherries +25</b> and rare <b>golden beans +50</b>.<br>
+    Catch a <span class="bad">burnt bean</span> or a <span class="bad">rock</span> — or drop a good one — and you lose a life.<br>
+    Chain catches to build a <b>×2 / ×3 streak</b>. You have 3 lives.
+  </div>
+  <button class="playbtn" id="playBtn">▶ Play</button>
+  <div class="bestline" id="menuBest"></div>
+</div>
+
+<div id="overScreen" class="overlay hidden">
+  <div class="title">Out of beans!</div>
+  <div class="finalscore">Final score<b id="finalScore">0</b></div>
+  <div class="newbest hidden" id="newBest">★ New best ★</div>
+  <div class="bestline" id="overBest"></div>
+  <button class="playbtn" id="againBtn">↻ Play Again</button>
+</div>
+
+<div id="pauseScreen" class="overlay hidden">
+  <div class="title">Paused</div>
+  <div id="pauseTip">Tap anywhere to keep catching.</div>
+</div>
+
+<div id="foot">Bean Catch · a COFFEE game · just for fun</div>
+
+<script>
+(function(){
+'use strict';
+/* ============================================================
+   Bean Catch — a free little game for the COFFEE community.
+   No wallet, no prizes — just beans.
+   ============================================================ */
+var canvas = document.getElementById('game');
+var ctx = canvas.getContext('2d');
+var hudEl = document.getElementById('hud');
+var scoreEl = document.getElementById('scoreVal');
+var bestEl = document.getElementById('bestVal');
+var livesEl = document.getElementById('lives');
+var streakEl = document.getElementById('streakVal');
+var menuEl = document.getElementById('menuScreen');
+var overEl = document.getElementById('overScreen');
+var pauseEl = document.getElementById('pauseScreen');
+var muteBtn = document.getElementById('muteBtn');
+
+
+var W = 0, H = 0, DPR = 1;
+
+/* ---------------- persistent bits ---------------- */
+function lsGet(k){ try{ return window.localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ window.localStorage.setItem(k,v); }catch(e){} }
+var best = parseInt(lsGet('beanCatchBest') || '0', 10) || 0;
+var muted = lsGet('beanCatchMuted') === '1';
+
+/* ---------------- audio (tiny synth) ---------------- */
+var audioCtx = null;
+function ensureAudio(){
+  if (muted) return null;
+  try{
+    if (!audioCtx){
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      audioCtx = new AC();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }catch(e){ return null; }
+}
+function tone(freqA, freqB, dur, type, vol, when){
+  var ac = ensureAudio(); if (!ac) return;
+  try{
+    var t0 = ac.currentTime + (when || 0);
+    var osc = ac.createOscillator(), g = ac.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freqA, t0);
+    if (freqB) osc.frequency.exponentialRampToValueAtTime(freqB, t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol || 0.14, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(t0); osc.stop(t0 + dur + 0.05);
+  }catch(e){}
+}
+function sndCatch(kind){
+  if (kind === 'golden'){ tone(740,1180,0.10,'sine',0.16,0); tone(1180,1560,0.12,'sine',0.13,0.07); }
+  else if (kind === 'cherry'){ tone(620,990,0.10,'triangle',0.15); }
+  else { tone(520,860,0.08,'sine',0.13); }
+}
+function sndBad(){ tone(190,80,0.22,'sawtooth',0.13); }
+function sndMiss(){ tone(320,140,0.16,'triangle',0.10); }
+function sndOver(){ tone(392,392,0.14,'sine',0.12,0); tone(330,330,0.14,'sine',0.12,0.15); tone(262,196,0.3,'sine',0.12,0.3); }
+
+/* ---------------- game state ---------------- */
+var VALUES = { bean:10, cherry:25, golden:50 };
+var GOOD = { bean:1, cherry:1, golden:1 };
+
+var G = {
+  state:'menu',          // menu | playing | paused | over
+  score:0, lives:3, streak:0, mult:1,
+  items:[], parts:[], texts:[],
+  cupX:0, cupW:96, cupH:56, cupY:0, groundY:0, itemR:21,
+  time:0, spawnT:0, shake:0,
+  keys:{left:false,right:false},
+  bokeh:[]
+};
+
+function itemRadius(){ return Math.max(15, Math.min(27, W * 0.052)); }
+
+function resize(){
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  G.itemR = itemRadius();
+  G.cupW = Math.max(74, G.itemR * 4.4);
+  G.cupH = G.itemR * 2.55;
+  G.groundY = H - Math.max(46, H * 0.075);
+  G.cupY = G.groundY - G.cupH + 6;
+  if (!G.cupX) G.cupX = W / 2;
+  G.cupX = Math.max(G.cupW/2, Math.min(W - G.cupW/2, G.cupX));
+  // static soft background lights
+  G.bokeh = [];
+  var seed = 7;
+  for (var i = 0; i < 14; i++){
+    seed = (seed * 16807) % 2147483647;
+    var bx = (seed % 1000) / 1000 * W;
+    seed = (seed * 16807) % 2147483647;
+    var by = (seed % 1000) / 1000 * H * 0.7;
+    G.bokeh.push({ x:bx, y:by, r:18 + (i % 5) * 11, a:0.028 + (i % 3) * 0.012 });
+  }
+}
+window.addEventListener('resize', resize);
+
+/* ---------------- items ---------------- */
+function pickType(){
+  var r = Math.random();
+  if (r < 0.05) return 'golden';
+  if (r < 0.15) return 'cherry';
+  if (r < 0.27) return 'burnt';
+  if (r < 0.38) return 'rock';
+  return 'bean';
+}
+function fallSpeed(){
+  var base = H * 0.30;
+  var ramp = 1 + Math.min(1.15, G.time / 85) + Math.min(0.35, G.score / 2500);
+  return base * ramp * (0.88 + Math.random() * 0.3);
+}
+function spawnItem(type, x){
+  var r = G.itemR * (type === 'golden' ? 0.92 : (0.9 + Math.random() * 0.25));
+  var it = {
+    type: type || pickType(),
+    x: (typeof x === 'number') ? x : (r + Math.random() * Math.max(1, W - r * 2)),
+    y: -r - 4,
+    r: r,
+    vy: fallSpeed(),
+    rot: (Math.random() - 0.5) * 0.9,
+    vr: (Math.random() - 0.5) * 2.4,
+    wob: Math.random() * Math.PI * 2
+  };
+  G.items.push(it);
+  return it;
+}
+function spawnInterval(){
+  return Math.max(0.30, 0.92 - G.time * 0.0075 - G.score * 0.00035);
+}
+
+/* ---------------- particles / floating text ---------------- */
+function burst(x, y, colors, n, power){
+  for (var i = 0; i < (n || 10); i++){
+    var a = Math.random() * Math.PI * 2, sp = (0.3 + Math.random() * 0.7) * (power || 90);
+    G.parts.push({ x:x, y:y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp - 40,
+      life:0.55 + Math.random()*0.3, t:0, r:1.6 + Math.random()*2.6,
+      color:colors[i % colors.length] });
+  }
+}
+function floatText(x, y, str, color){
+  G.texts.push({ x:x, y:y, str:str, color:color, t:0, life:0.9 });
+}
+
+/* ---------------- flow ---------------- */
+function updateLivesHud(){
+  var s = '';
+  for (var i = 0; i < 3; i++) s += '<span class="' + (i < G.lives ? '' : 'off') + '">♥</span>';
+  livesEl.innerHTML = s;
+}
+function updateHud(){
+  scoreEl.textContent = G.score;
+  bestEl.textContent = Math.max(best, G.score);
+  streakEl.textContent = G.streak > 1 ? (G.streak + ' · ×' + G.mult) : '–';
+  updateLivesHud();
+}
+function startGame(){
+  G.score = 0; G.lives = 3; G.streak = 0; G.mult = 1;
+  G.items = []; G.parts = []; G.texts = [];
+  G.time = 0; G.spawnT = 0.35; G.shake = 0;
+  G.cupX = W / 2;
+  G.state = 'playing';
+  menuEl.classList.add('hidden'); overEl.classList.add('hidden'); pauseEl.classList.add('hidden');
+  hudEl.classList.remove('hidden');
+  ensureAudio();
+  updateHud();
+}
+function gameOver(){
+  G.state = 'over';
+  var isBest = G.score > best;
+  if (isBest){ best = G.score; lsSet('beanCatchBest', String(best)); }
+  document.getElementById('finalScore').textContent = G.score;
+  document.getElementById('overBest').textContent = 'Best: ' + best;
+  document.getElementById('newBest').classList.toggle('hidden', !isBest);
+  overEl.classList.remove('hidden');
+  sndOver();
+}
+function loseLife(){
+  G.lives -= 1;
+  G.streak = 0; G.mult = 1;
+  if (G.lives <= 0){ updateHud(); gameOver(); }
+}
+function multFor(streak){ return streak >= 25 ? 3 : (streak >= 10 ? 2 : 1); }
+
+/* ---------------- update ---------------- */
+function update(dt){
+  // particles/texts always animate a little
+  var i, p;
+  for (i = G.parts.length - 1; i >= 0; i--){
+    p = G.parts[i]; p.t += dt;
+    if (p.t >= p.life){ G.parts.splice(i, 1); continue; }
+    p.vy += 260 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+  }
+  for (i = G.texts.length - 1; i >= 0; i--){
+    p = G.texts[i]; p.t += dt; p.y -= 44 * dt;
+    if (p.t >= p.life) G.texts.splice(i, 1);
+  }
+  if (G.shake > 0) G.shake = Math.max(0, G.shake - dt * 26);
+  if (G.state !== 'playing') return;
+
+  G.time += dt;
+
+  // keyboard steering
+  var kSpeed = W * 1.15;
+  if (G.keys.left)  G.cupX -= kSpeed * dt;
+  if (G.keys.right) G.cupX += kSpeed * dt;
+  G.cupX = Math.max(G.cupW/2 - 6, Math.min(W - G.cupW/2 + 6, G.cupX));
+
+  // spawner
+  G.spawnT -= dt;
+  if (G.spawnT <= 0){ spawnItem(); G.spawnT = spawnInterval() * (0.75 + Math.random() * 0.5); }
+
+  var rimY = G.cupY + 4;
+  for (i = G.items.length - 1; i >= 0; i--){
+    var it = G.items[i];
+    it.y += it.vy * dt;
+    it.rot += it.vr * dt;
+    it.wob += dt * 3;
+    var sway = Math.sin(it.wob) * 6 * dt;
+    it.x += sway;
+
+    // caught?
+    if (it.vy > 0 && it.y + it.r * 0.45 >= rimY && it.y - it.r * 0.4 <= rimY + G.cupH * 0.55 &&
+        Math.abs(it.x - G.cupX) <= G.cupW / 2 - 2){
+      G.items.splice(i, 1);
+      if (GOOD[it.type]){
+        G.streak += 1;
+        G.mult = multFor(G.streak);
+        var pts = VALUES[it.type] * G.mult;
+        G.score += pts;
+        burst(it.x, rimY, it.type === 'golden' ? ['#ffe27a','#f5b921','#fff3c4'] : ['#c98d4e','#8a5a24','#f7ead7'], it.type === 'golden' ? 16 : 10, it.type === 'golden' ? 130 : 95);
+        floatText(it.x, rimY - 14, '+' + pts, it.type === 'golden' ? '#ffd94d' : '#f7ead7');
+        sndCatch(it.type);
+      } else {
+        burst(it.x, rimY, ['#555','#222','#888'], 12, 80);
+        floatText(it.x, rimY - 14, it.type === 'rock' ? 'CLANG!' : 'BURNT!', '#ff8a7a');
+        G.shake = 9;
+        sndBad();
+        loseLife();
+      }
+      updateHud();
+      continue;
+    }
+    // hit the ground?
+    if (it.y - it.r * 0.3 >= G.groundY){
+      G.items.splice(i, 1);
+      if (GOOD[it.type]){
+        burst(it.x, G.groundY, ['#6b4a2a','#4a2c17'], 6, 55);
+        floatText(it.x, G.groundY - 18, 'MISSED', '#ffb3a6');
+        G.streak = 0; G.mult = 1;
+        sndMiss();
+        loseLife();
+        updateHud();
+      } else {
+        burst(it.x, G.groundY, ['#5a4632','#3a2a18'], 5, 45); // safe little dust puff
+      }
+    }
+  }
+}
+
+/* ============================================================
+   DRAWING — all sprites are hand-drawn canvas, no images.
+   ============================================================ */
+function drawBeanShape(cx, cy, r, rot, cHi, cMid, cEdge, cCrease, speckles){
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot);
+  var g = ctx.createRadialGradient(-r*0.35, -r*0.4, r*0.15, 0, 0, r*1.15);
+  g.addColorStop(0, cHi); g.addColorStop(0.55, cMid); g.addColorStop(1, cEdge);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.ellipse(0, 0, r * 0.8, r, 0, 0, Math.PI * 2); ctx.fill();
+  // glossy highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.20)';
+  ctx.beginPath(); ctx.ellipse(-r*0.32, -r*0.42, r*0.24, r*0.13, -0.6, 0, Math.PI * 2); ctx.fill();
+  // centre crease (the bean's signature S-curve)
+  ctx.strokeStyle = cCrease; ctx.lineWidth = Math.max(1.6, r * 0.13);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(0, -r * 0.82);
+  ctx.bezierCurveTo(r*0.34, -r*0.3, -r*0.34, r*0.3, 0, r * 0.82);
+  ctx.stroke();
+  if (speckles){
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    for (var i = 0; i < 5; i++){
+      ctx.beginPath();
+      ctx.arc(((i*37)%13-6)/10*r*0.5, ((i*53)%17-8)/10*r*0.6, r*0.07, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+function drawCherry(cx, cy, r, rot){
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot * 0.4);
+  // stem
+  ctx.strokeStyle = '#4d6b2f'; ctx.lineWidth = Math.max(1.6, r * 0.11); ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(r*0.1, -r*0.55);
+  ctx.quadraticCurveTo(r*0.5, -r*1.15, r*0.95, -r*1.05); ctx.stroke();
+  // leaf
+  ctx.fillStyle = '#5d8238';
+  ctx.beginPath(); ctx.ellipse(r*0.78, -r*0.95, r*0.3, r*0.13, 0.5, 0, Math.PI*2); ctx.fill();
+  // body
+  var g = ctx.createRadialGradient(-r*0.35, -r*0.4, r*0.1, 0, 0, r*1.1);
+  g.addColorStop(0, '#ff8a75'); g.addColorStop(0.45, '#e8352a'); g.addColorStop(1, '#9c130d');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.88, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.beginPath(); ctx.ellipse(-r*0.32, -r*0.38, r*0.2, r*0.12, -0.6, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+function drawRock(cx, cy, r, rot){
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot);
+  var pts = [[-0.85,-0.25],[-0.4,-0.75],[0.35,-0.8],[0.85,-0.3],[0.7,0.55],[0.05,0.85],[-0.65,0.6]];
+  var g = ctx.createLinearGradient(-r, -r, r, r);
+  g.addColorStop(0, '#a9a49c'); g.addColorStop(0.5, '#7c766e'); g.addColorStop(1, '#4e4a45');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  for (var i = 0; i < pts.length; i++){
+    var px = pts[i][0] * r, py = pts[i][1] * r;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(30,28,25,0.55)'; ctx.lineWidth = 1.4; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(-r*0.4, -r*0.72); ctx.lineTo(r*0.05, r*0.1); ctx.lineTo(-r*0.62, r*0.55); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(r*0.05, r*0.1); ctx.lineTo(r*0.68, r*0.5); ctx.stroke();
+  ctx.restore();
+}
+function drawItem(it){
+  if (it.type === 'bean')   drawBeanShape(it.x, it.y, it.r, it.rot, '#c98d4e', '#8a5a24', '#54360f', '#38220a', false);
+  else if (it.type === 'golden') drawBeanShape(it.x, it.y, it.r, it.rot, '#fff0a6', '#f5b921', '#b97e10', '#96690a', false);
+  else if (it.type === 'burnt')  drawBeanShape(it.x, it.y, it.r, it.rot, '#5a5a5a', '#2b2b2b', '#0d0d0d', '#000000', true);
+  else if (it.type === 'cherry') drawCherry(it.x, it.y, it.r, it.rot);
+  else if (it.type === 'rock')   drawRock(it.x, it.y, it.r, it.rot);
+}
+function drawCup(){
+  var x = G.cupX, y = G.cupY, w = G.cupW, h = G.cupH;
+  ctx.save(); ctx.translate(x, y);
+  // saucer
+  ctx.fillStyle = 'rgba(0,0,0,0.30)';
+  ctx.beginPath(); ctx.ellipse(0, h + 7, w * 0.62, 7, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#e9dcc4';
+  ctx.beginPath(); ctx.ellipse(0, h + 3, w * 0.58, 6, 0, 0, Math.PI * 2); ctx.fill();
+  // handle
+  ctx.strokeStyle = '#f3e7cf'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(w * 0.52, h * 0.45, h * 0.26, -1.1, 1.1); ctx.stroke();
+  ctx.strokeStyle = 'rgba(120,86,50,0.5)'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(w * 0.52, h * 0.45, h * 0.26 + 4, -1.1, 1.1); ctx.stroke();
+  // body
+  var g = ctx.createLinearGradient(-w/2, 0, w/2, 0);
+  g.addColorStop(0, '#d9c8a6'); g.addColorStop(0.25, '#fdf6e3'); g.addColorStop(0.75, '#f3e7cf'); g.addColorStop(1, '#c9b28a');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(-w/2, 0); ctx.lineTo(w/2, 0);
+  ctx.lineTo(w * 0.36, h); ctx.quadraticCurveTo(0, h + 6, -w * 0.36, h);
+  ctx.closePath(); ctx.fill();
+  // brown band + label
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(-w/2 + 2, h * 0.34); ctx.lineTo(w/2 - 2, h * 0.34);
+  ctx.lineTo(w * 0.415, h * 0.74); ctx.lineTo(-w * 0.415, h * 0.74);
+  ctx.closePath(); ctx.clip();
+  ctx.fillStyle = '#6b4226'; ctx.fillRect(-w/2, h * 0.34, w, h * 0.4);
+  ctx.fillStyle = '#f7ead7';
+  ctx.font = '700 ' + Math.max(9, h * 0.21) + 'px Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('COFFEE', 0, h * 0.545);
+  ctx.restore();
+  // coffee surface
+  var cg = ctx.createRadialGradient(0, 2, 2, 0, 2, w/2);
+  cg.addColorStop(0, '#7a4a21'); cg.addColorStop(0.8, '#4a2a10'); cg.addColorStop(1, '#33200c');
+  ctx.fillStyle = cg;
+  ctx.beginPath(); ctx.ellipse(0, 2, w/2 - 2, 7.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#fdf6e3'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.ellipse(0, 1, w/2 - 1, 8, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+function drawBackground(){
+  var g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#41260f'); g.addColorStop(0.45, '#33200e'); g.addColorStop(1, '#1d0f04');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // soft bokeh lights
+  for (var i = 0; i < G.bokeh.length; i++){
+    var b = G.bokeh[i];
+    var rg = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
+    rg.addColorStop(0, 'rgba(255,190,100,' + b.a + ')');
+    rg.addColorStop(1, 'rgba(255,190,100,0)');
+    ctx.fillStyle = rg;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+  }
+  // counter
+  var cg = ctx.createLinearGradient(0, G.groundY, 0, H);
+  cg.addColorStop(0, '#7c4f26'); cg.addColorStop(0.12, '#5f3a1a'); cg.addColorStop(1, '#3c2310');
+  ctx.fillStyle = cg; ctx.fillRect(0, G.groundY, W, H - G.groundY);
+  ctx.fillStyle = 'rgba(255,220,160,0.35)'; ctx.fillRect(0, G.groundY, W, 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.16)';
+  for (var x = 26; x < W; x += 74) ctx.fillRect(x, G.groundY + 8, 2, H - G.groundY - 14);
+}
+function render(){
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  if (G.shake > 0) ctx.translate((Math.random() - 0.5) * G.shake, (Math.random() - 0.5) * G.shake);
+  drawBackground();
+  var i;
+  for (i = 0; i < G.items.length; i++) drawItem(G.items[i]);
+  drawCup();
+  for (i = 0; i < G.parts.length; i++){
+    var p = G.parts[i];
+    ctx.globalAlpha = Math.max(0, 1 - p.t / p.life);
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  for (i = 0; i < G.texts.length; i++){
+    var t = G.texts[i];
+    ctx.globalAlpha = Math.max(0, 1 - t.t / t.life);
+    ctx.fillStyle = t.color;
+    ctx.font = '800 17px -apple-system, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(t.str, t.x, t.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+/* ---------------- main loop ---------------- */
+var lastT = 0;
+function frame(ts){
+  var dt = Math.min(0.05, ((ts || 0) - lastT) / 1000 || 0.016);
+  lastT = ts || 0;
+  update(dt);
+  render();
+  window.requestAnimationFrame(frame);
+}
+
+/* ---------------- input ---------------- */
+function pointerX(e){ return e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : G.cupX); }
+function onMove(e){
+  if (G.state === 'playing'){ G.cupX = pointerX(e); }
+}
+canvas.addEventListener('pointermove', onMove, { passive:true });
+canvas.addEventListener('pointerdown', function(e){
+  ensureAudio();
+  if (G.state === 'playing') G.cupX = pointerX(e);
+  if (G.state === 'paused'){ resumeGame(); }
+}, { passive:true });
+canvas.addEventListener('touchmove', function(e){ if (G.state === 'playing') e.preventDefault(); }, { passive:false });
+document.addEventListener('touchmove', function(e){ if (G.state === 'playing') e.preventDefault(); }, { passive:false });
+window.addEventListener('keydown', function(e){
+  if (e.key === 'ArrowLeft'){ G.keys.left = true; e.preventDefault(); }
+  if (e.key === 'ArrowRight'){ G.keys.right = true; e.preventDefault(); }
+  if ((e.key === ' ' || e.key === 'Enter')){
+    if (G.state === 'menu') startGame();
+    else if (G.state === 'over') startGame();
+    else if (G.state === 'paused') resumeGame();
+  }
+});
+window.addEventListener('keyup', function(e){
+  if (e.key === 'ArrowLeft') G.keys.left = false;
+  if (e.key === 'ArrowRight') G.keys.right = false;
+});
+document.addEventListener('visibilitychange', function(){
+  if (document.hidden && G.state === 'playing'){
+    G.state = 'paused';
+    pauseEl.classList.remove('hidden');
+  }
+});
+function resumeGame(){
+  if (G.state !== 'paused') return;
+  G.state = 'playing';
+  pauseEl.classList.add('hidden');
+}
+pauseEl.addEventListener('pointerdown', resumeGame);
+
+document.getElementById('playBtn').addEventListener('click', function(){ ensureAudio(); startGame(); });
+document.getElementById('againBtn').addEventListener('click', function(){ ensureAudio(); startGame(); });
+function syncMuteBtn(){ muteBtn.textContent = muted ? '🔇' : '🔊'; }
+muteBtn.addEventListener('click', function(){
+  muted = !muted; lsSet('beanCatchMuted', muted ? '1' : '0'); syncMuteBtn();
+  if (!muted) ensureAudio();
+});
+
+/* ---------------- boot ---------------- */
+document.getElementById('menuBest').textContent = best > 0 ? 'Best score: ' + best : '';
+bestEl.textContent = best;
+syncMuteBtn();
+resize();
+updateLivesHud();
+window.requestAnimationFrame(frame);
+
+/* Debug/testing hook */
+window.__beanCatch = {
+  game: G,
+  start: startGame,
+  spawn: spawnItem,
+  step: function(dt){ update(dt || 0.016); },
+  render: render,
+  resize: resize,
+  values: VALUES
+};
+})();
+</script>
+</body>
+</html>
